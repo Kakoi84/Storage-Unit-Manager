@@ -751,6 +751,35 @@ impl Database {
         Ok(rentals)
     }
 
+    pub fn update_active_rental_rent(
+        &self,
+        rental_id: i64,
+        monthly_rent_cents: i64,
+    ) -> Result<bool> {
+        if rental_id <= 0 {
+            return Err(anyhow!("A valid rental must be selected."));
+        }
+
+        if monthly_rent_cents < 0 {
+            return Err(anyhow!("Monthly rent cannot be negative."));
+        }
+
+        let affected_rows = self.connection.execute(
+            "
+            UPDATE rentals
+            SET
+                monthly_rent_cents = ?1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE
+                id = ?2
+                AND end_date IS NULL;
+            ",
+            params![monthly_rent_cents, rental_id],
+        )?;
+
+        Ok(affected_rows == 1)
+    }
+
     pub fn end_rental(&mut self, rental_id: i64, end_date: &str) -> Result<bool> {
         let end_date = end_date.trim();
 

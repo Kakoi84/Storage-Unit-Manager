@@ -69,8 +69,8 @@ impl Config {
     {
         let path = path.as_ref();
 
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty() {
                 fs::create_dir_all(parent).with_context(|| {
                     format!(
                         "Unable to create configuration directory: {}",
@@ -78,7 +78,6 @@ impl Config {
                     )
                 })?;
             }
-        }
 
         let contents = toml::to_string_pretty(self)
             .context("Unable to serialize application configuration")?;

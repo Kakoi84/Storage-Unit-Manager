@@ -120,7 +120,12 @@ impl eframe::App for StorageManager {
         egui::TopBottomPanel::bottom("status_bar")
             .exact_height(24.0)
             .show(ctx, |ui| {
-                widgets::statusbar::show(ui, self.context.config(), self.context.status_message(), self.context.database());
+                widgets::statusbar::show(
+                    ui,
+                    self.context.config(),
+                    self.context.status_message(),
+                    self.context.database(),
+                );
             });
 
         //---------------------------------------------------------

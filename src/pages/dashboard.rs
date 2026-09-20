@@ -73,11 +73,7 @@ impl DashboardPage {
 
                 metric_card(ui, "Vacant", summary.vacant_units.to_string());
 
-                metric_card(
-                    ui,
-                    "Needs Cleaned",
-                    summary.needs_cleaned_units.to_string(),
-                );
+                metric_card(ui, "Needs Cleaned", summary.needs_cleaned_units.to_string());
 
                 ui.end_row();
 
@@ -120,9 +116,7 @@ impl DashboardPage {
             .units
             .iter()
             .filter(|unit| {
-                unit.occupied
-                    && !unit.red_lock
-                    && !padlocks_by_unit.contains_key(&unit.id)
+                unit.occupied && !unit.red_lock && !padlocks_by_unit.contains_key(&unit.id)
             })
             .count();
 
@@ -137,17 +131,14 @@ impl DashboardPage {
 
             ui.colored_label(needs_cleaned_color(), "■ Needs Cleaned");
 
-            ui.label("🟨 Yellow Lock");
-            ui.label("🟥 Red Lock");
+            ui.colored_label(yellow_lock_color(), "■ Yellow Lock");
+            ui.colored_label(red_lock_color(), "■ Red Lock");
             ui.label("🔒 Tracked Padlock");
 
             if occupied_without_lock > 0 {
                 ui.colored_label(
                     warning_color(),
-                    format!(
-                        "⚠ {} occupied without customer lock",
-                        occupied_without_lock,
-                    ),
+                    format!("⚠ {} occupied without customer lock", occupied_without_lock,),
                 );
             }
         });
@@ -186,13 +177,11 @@ impl DashboardPage {
         for sections in buildings.values_mut() {
             for units in sections.values_mut() {
                 units.sort_by(|left, right| {
-                    left.display_order
-                        .cmp(&right.display_order)
-                        .then_with(|| {
-                            left.unit_number
-                                .to_lowercase()
-                                .cmp(&right.unit_number.to_lowercase())
-                        })
+                    left.display_order.cmp(&right.display_order).then_with(|| {
+                        left.unit_number
+                            .to_lowercase()
+                            .cmp(&right.unit_number.to_lowercase())
+                    })
                 });
             }
         }
@@ -216,10 +205,7 @@ impl DashboardPage {
 
                         ui.add_space(3.0);
 
-                        let scroll_id = format!(
-                            "dashboard_section_{}_{}",
-                            building, section,
-                        );
+                        let scroll_id = format!("dashboard_section_{}_{}", building, section,);
 
                         egui::ScrollArea::horizontal()
                             .id_salt(scroll_id)
@@ -227,8 +213,7 @@ impl DashboardPage {
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     for unit in units {
-                                        let padlock =
-                                            padlocks_by_unit.get(&unit.id).copied();
+                                        let padlock = padlocks_by_unit.get(&unit.id).copied();
 
                                         show_unit_tile(ui, unit, padlock);
                                     }
@@ -342,11 +327,11 @@ fn show_unit_tile(ui: &mut egui::Ui, unit: &Unit, padlock: Option<&Padlock>) {
     let mut lock_labels = Vec::new();
 
     if unit.yellow_lock {
-        lock_labels.push("🟨");
+        lock_labels.push("Y");
     }
 
     if unit.red_lock {
-        lock_labels.push("🟥");
+        lock_labels.push("R");
     }
 
     if padlock.is_some() {
@@ -393,6 +378,8 @@ fn show_unit_tile(ui: &mut egui::Ui, unit: &Unit, padlock: Option<&Padlock>) {
 
     let response = ui.add_sized([tile_width, 116.0_f32], button);
 
+    draw_lock_markers(ui, response.rect, unit);
+
     let padlock_details = if let Some(padlock) = padlock {
         format!("Tracked padlock: {}", padlock.serial_number,)
     } else {
@@ -429,6 +416,38 @@ fn show_unit_tile(ui: &mut egui::Ui, unit: &Unit, padlock: Option<&Padlock>) {
         customer_lock_status,
         format_money(unit.monthly_rent_cents,),
     ));
+}
+
+fn draw_lock_markers(ui: &egui::Ui, tile_rect: egui::Rect, unit: &Unit) {
+    let marker_size = 11.0_f32;
+    let marker_gap = 4.0_f32;
+    let marker_y = tile_rect.top() + 8.0_f32;
+    let mut marker_x = tile_rect.right() - 8.0_f32 - marker_size;
+
+    if unit.red_lock {
+        let rect = egui::Rect::from_min_size(
+            egui::pos2(marker_x, marker_y),
+            egui::vec2(marker_size, marker_size),
+        );
+        ui.painter().rect_filled(rect, 2.0_f32, red_lock_color());
+        marker_x -= marker_size + marker_gap;
+    }
+
+    if unit.yellow_lock {
+        let rect = egui::Rect::from_min_size(
+            egui::pos2(marker_x, marker_y),
+            egui::vec2(marker_size, marker_size),
+        );
+        ui.painter().rect_filled(rect, 2.0_f32, yellow_lock_color());
+    }
+}
+
+fn yellow_lock_color() -> egui::Color32 {
+    egui::Color32::from_rgb(235, 205, 45)
+}
+
+fn red_lock_color() -> egui::Color32 {
+    egui::Color32::from_rgb(205, 55, 55)
 }
 
 fn vacant_color() -> egui::Color32 {

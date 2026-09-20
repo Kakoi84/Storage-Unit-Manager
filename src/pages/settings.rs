@@ -302,7 +302,7 @@ impl SettingsPage {
                     .iter()
                     .position(|path| path == &selected_path)
             })
-            .or_else(|| {
+            .or({
                 if self.backup_files.is_empty() {
                     None
                 } else {

@@ -13,6 +13,7 @@ pub struct RentalsPage {
     active_rentals: Vec<Rental>,
     loaded: bool,
     pending_end: Option<PendingEnd>,
+    pending_rent_adjustment: Option<PendingRentAdjustment>,
     error_message: Option<String>,
 }
 
@@ -34,6 +35,15 @@ struct PendingEnd {
     end_date: String,
 }
 
+#[derive(Debug, Clone)]
+struct PendingRentAdjustment {
+    rental_id: i64,
+    tenant_name: String,
+    unit_number: String,
+    current_rent_cents: i64,
+    new_monthly_rent: String,
+}
+
 impl RentalsPage {
     pub fn show(&mut self, ui: &mut egui::Ui, context: &mut AppContext) {
         if !self.loaded {
@@ -52,6 +62,7 @@ impl RentalsPage {
         self.show_active_rentals(ui);
 
         let egui_context = ui.ctx().clone();
+        self.show_adjust_rent_window(&egui_context, context);
         self.show_end_confirmation(&egui_context, context);
     }
 
@@ -72,7 +83,7 @@ impl RentalsPage {
                     .selected_text(selected_tenant_text)
                     .width(220.0)
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.form.tenant_id, None, "Select Tenant");
+                        ui.selectable_value(&mut self.form.tenant_id, None, "Select tenant");
 
                         for tenant in &self.tenants {
                             ui.selectable_value(
@@ -91,7 +102,7 @@ impl RentalsPage {
                     .selected_text(selected_unit_text)
                     .width(220.0)
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.form.unit_id, None, "Select Unit");
+                        ui.selectable_value(&mut self.form.unit_id, None, "Select unit");
 
                         for unit in &self.vacant_units {
                             ui.selectable_value(
@@ -192,6 +203,7 @@ impl RentalsPage {
         }
 
         let mut requested_end: Option<PendingEnd> = None;
+        let mut requested_rent_adjustment: Option<PendingRentAdjustment> = None;
 
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
@@ -214,24 +226,152 @@ impl RentalsPage {
                             ui.label(&rental.start_date);
                             ui.label(format_money(rental.monthly_rent_cents));
 
-                            if ui.small_button("End Rental").clicked() {
-                                requested_end = Some(PendingEnd {
-                                    rental_id: rental.id,
-                                    tenant_name: rental.tenant_name.clone(),
-                                    unit_number: rental.unit_number.clone(),
-                                    start_date: rental.start_date.clone(),
-                                    end_date: String::new(),
-                                });
-                            }
+                            ui.horizontal(|ui| {
+                                if ui.small_button("Adjust Rent").clicked() {
+                                    requested_rent_adjustment = Some(PendingRentAdjustment {
+                                        rental_id: rental.id,
+                                        tenant_name: rental.tenant_name.clone(),
+                                        unit_number: rental.unit_number.clone(),
+                                        current_rent_cents: rental.monthly_rent_cents,
+                                        new_monthly_rent: format_money_input(
+                                            rental.monthly_rent_cents,
+                                        ),
+                                    });
+                                }
+
+                                if ui.small_button("End Rental").clicked() {
+                                    requested_end = Some(PendingEnd {
+                                        rental_id: rental.id,
+                                        tenant_name: rental.tenant_name.clone(),
+                                        unit_number: rental.unit_number.clone(),
+                                        start_date: rental.start_date.clone(),
+                                        end_date: String::new(),
+                                    });
+                                }
+                            });
 
                             ui.end_row();
                         }
                     });
             });
 
+        if let Some(pending_rent_adjustment) = requested_rent_adjustment {
+            self.pending_rent_adjustment = Some(pending_rent_adjustment);
+        }
+
         if let Some(pending_end) = requested_end {
             self.pending_end = Some(pending_end);
         }
+    }
+
+    fn show_adjust_rent_window(&mut self, ctx: &egui::Context, context: &mut AppContext) {
+        let Some(mut pending) = self.pending_rent_adjustment.clone() else {
+            return;
+        };
+
+        let mut save_adjustment = false;
+        let mut cancel_adjustment = false;
+
+        egui::Window::new("Adjust Monthly Rent")
+            .id(egui::Id::new("adjust_monthly_rent"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.strong(format!(
+                    "{} — Unit {}",
+                    pending.tenant_name, pending.unit_number,
+                ));
+
+                ui.add_space(8.0);
+
+                egui::Grid::new("adjust_monthly_rent_form")
+                    .num_columns(2)
+                    .spacing([16.0, 8.0])
+                    .show(ui, |ui| {
+                        ui.label("Current monthly rent:");
+                        ui.label(format_money(pending.current_rent_cents));
+                        ui.end_row();
+
+                        ui.label("New monthly rent:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut pending.new_monthly_rent)
+                                .hint_text("0.00")
+                                .desired_width(140.0),
+                        );
+                        ui.end_row();
+                    });
+
+                ui.add_space(8.0);
+                ui.label(
+                    "This changes only this active rental. The unit's standard rate is unchanged.",
+                );
+
+                ui.add_space(12.0);
+
+                ui.horizontal(|ui| {
+                    if ui.button("Save Rent").clicked() {
+                        save_adjustment = true;
+                    }
+
+                    if ui.button("Cancel").clicked() {
+                        cancel_adjustment = true;
+                    }
+                });
+            });
+
+        if cancel_adjustment {
+            self.pending_rent_adjustment = None;
+            context.set_status_message("Rent adjustment canceled");
+            return;
+        }
+
+        if save_adjustment {
+            let monthly_rent_cents = match parse_dollars_to_cents(&pending.new_monthly_rent) {
+                Ok(value) => value,
+                Err(error) => {
+                    self.pending_rent_adjustment = Some(pending);
+                    self.set_error(context, error);
+                    return;
+                }
+            };
+
+            match context
+                .database()
+                .update_active_rental_rent(pending.rental_id, monthly_rent_cents)
+            {
+                Ok(true) => {
+                    self.pending_rent_adjustment = None;
+                    self.error_message = None;
+                    context.mark_data_changed();
+                    context.set_status_message(format!(
+                        "Updated monthly rent for {} in Unit {} to {}",
+                        pending.tenant_name,
+                        pending.unit_number,
+                        format_money(monthly_rent_cents),
+                    ));
+                    self.refresh_all(context);
+                }
+                Ok(false) => {
+                    self.pending_rent_adjustment = None;
+                    self.set_error(
+                        context,
+                        format!(
+                            "The rental for Unit {} is no longer active.",
+                            pending.unit_number,
+                        ),
+                    );
+                }
+                Err(error) => {
+                    self.pending_rent_adjustment = Some(pending);
+                    self.set_error(context, format!("Unable to adjust monthly rent: {}", error));
+                }
+            }
+
+            return;
+        }
+
+        self.pending_rent_adjustment = Some(pending);
     }
 
     fn start_rental(&mut self, context: &mut AppContext) {
@@ -445,26 +585,26 @@ impl RentalsPage {
 
     fn selected_tenant_text(&self) -> String {
         let Some(tenant_id) = self.form.tenant_id else {
-            return "Select Tenant".to_string();
+            return "Select tenant".to_string();
         };
 
         self.tenants
             .iter()
             .find(|tenant| tenant.id == tenant_id)
             .map(Tenant::display_name)
-            .unwrap_or_else(|| "Select Tenant".to_string())
+            .unwrap_or_else(|| "Select tenant".to_string())
     }
 
     fn selected_unit_text(&self) -> String {
         let Some(unit_id) = self.form.unit_id else {
-            return "Select Unit".to_string();
+            return "Select unit".to_string();
         };
 
         self.vacant_units
             .iter()
             .find(|unit| unit.id == unit_id)
             .map(unit_display_name)
-            .unwrap_or_else(|| "Select Unit".to_string())
+            .unwrap_or_else(|| "Select unit".to_string())
     }
 
     fn set_error<S>(&mut self, context: &mut AppContext, message: S)

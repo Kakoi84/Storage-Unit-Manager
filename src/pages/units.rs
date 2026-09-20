@@ -187,8 +187,13 @@ impl UnitsPage {
                 ui.label("Unit locks:");
 
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut self.form.yellow_lock, "🟨 Yellow Lock");
-                    ui.checkbox(&mut self.form.red_lock, "🟥 Red Lock");
+                    ui.colored_label(yellow_lock_color(), "■");
+                    ui.checkbox(&mut self.form.yellow_lock, "Yellow Lock");
+
+                    ui.add_space(12.0_f32);
+
+                    ui.colored_label(red_lock_color(), "■");
+                    ui.checkbox(&mut self.form.red_lock, "Red Lock");
                 });
 
                 ui.end_row();
@@ -315,18 +320,12 @@ impl UnitsPage {
                                 if !unit.occupied {
                                     if unit.needs_cleaned {
                                         if ui.small_button("✓ Mark Cleaned").clicked() {
-                                            requested_cleaning_status = Some((
-                                                unit.id,
-                                                false,
-                                                unit.unit_number.clone(),
-                                            ));
+                                            requested_cleaning_status =
+                                                Some((unit.id, false, unit.unit_number.clone()));
                                         }
                                     } else if ui.small_button("🧹 Needs Cleaned").clicked() {
-                                        requested_cleaning_status = Some((
-                                            unit.id,
-                                            true,
-                                            unit.unit_number.clone(),
-                                        ));
+                                        requested_cleaning_status =
+                                            Some((unit.id, true, unit.unit_number.clone()));
                                     }
                                 }
 
@@ -363,12 +362,7 @@ impl UnitsPage {
         }
 
         if let Some((id, needs_cleaned, unit_number)) = requested_cleaning_status {
-            self.set_cleaning_status(
-                id,
-                needs_cleaned,
-                &unit_number,
-                context,
-            );
+            self.set_cleaning_status(id, needs_cleaned, &unit_number, context);
         }
     }
 
@@ -379,20 +373,15 @@ impl UnitsPage {
         unit_number: &str,
         context: &mut AppContext,
     ) {
-        match context
-            .database()
-            .set_unit_needs_cleaned(id, needs_cleaned)
-        {
+        match context.database().set_unit_needs_cleaned(id, needs_cleaned) {
             Ok(true) => {
                 self.error_message = None;
 
                 context.mark_data_changed();
 
                 if needs_cleaned {
-                    context.set_status_message(format!(
-                        "Unit {} marked Needs Cleaned",
-                        unit_number,
-                    ));
+                    context
+                        .set_status_message(format!("Unit {} marked Needs Cleaned", unit_number,));
                 } else {
                     context.set_status_message(format!(
                         "Unit {} marked Cleaned and Vacant",
@@ -418,8 +407,7 @@ impl UnitsPage {
                     context,
                     format!(
                         "Unable to update cleaning status for Unit {}: {}",
-                        unit_number,
-                        error,
+                        unit_number, error,
                     ),
                 );
             }
@@ -933,6 +921,14 @@ fn format_money(cents: i64) -> String {
 
 fn format_money_input(cents: i64) -> String {
     format!("{}.{:02}", cents / 100, cents.abs() % 100,)
+}
+
+fn yellow_lock_color() -> egui::Color32 {
+    egui::Color32::from_rgb(235, 205, 45)
+}
+
+fn red_lock_color() -> egui::Color32 {
+    egui::Color32::from_rgb(205, 55, 55)
 }
 
 fn format_dimensions(unit: &Unit) -> String {
